@@ -39,6 +39,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define VCP_BUFF_SIZE   100
+#define VCP_BUFF_SIZE_2 5000
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -61,11 +63,16 @@ static void MX_GPIO_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-uint8_t buffer[] = "\ntest VCP OK\n";
-uint8_t Tx_data[] = {0,1,2,3,4,5,6,7,8,9};
+uint8_t msgStr[] = "\ntest VCP OK\n";
+
 int msgVCP_len = 0;
-char msgVCP[100];
-char msgVCP_2[5000];
+char msgVCP[VCP_BUFF_SIZE];
+char msgVCP_2[VCP_BUFF_SIZE_2];
+
+uint8_t bufferVCP_Rx[VCP_BUFF_SIZE];
+
+char strCMD_1[] = "toggleLED";
+char strCMD_2[] = "sendValues";
 /* USER CODE END 0 */
 
 /**
@@ -75,7 +82,9 @@ char msgVCP_2[5000];
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-
+  const char *tokenSeparator = ".\n\r";
+  char* token;
+  int toggleVar = 0;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -103,36 +112,64 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  unsigned int cnt = 100-1;
+  unsigned int cnt = 100;
 
-  for(int i=0; i<5000;i++)
+  // Filling a vector with dummy consecutive data
+  for(int i=0; i<VCP_BUFF_SIZE_2;i++)
   {
     msgVCP_2[i] = 0x30 + (i % 10);
   }
 
   while (1)
   {
-    CDC_Transmit_FS(buffer,sizeof(buffer)-1);
-    HAL_Delay(1);
-
-    while(cnt != 0)
+    // tokenize command recevied in CDC_Receive_FS(...) (file: usbd_cdc_ig.c)
+    token = strtok((char*)bufferVCP_Rx,tokenSeparator);
+    if (token != NULL)
     {
-      HAL_GPIO_TogglePin (GPIOB, GPIO_PIN_0);
-      HAL_GPIO_TogglePin (GPIOB, GPIO_PIN_7);
+      if(strcmp(token,strCMD_1) == 0)
+      {
+        HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_14);
+        memset (bufferVCP_Rx, '\0', 64);  // clear the VCP buffer always
+        toggleVar = !toggleVar;
+        if(toggleVar)
+        {
+          msgVCP_len = sprintf(msgVCP, "LED ON\n");
+          CDC_Transmit_FS((uint8_t *)msgVCP, msgVCP_len);
+        }
+        else
+        {
+          msgVCP_len = sprintf(msgVCP, "LED OFF\n");
+          CDC_Transmit_FS((uint8_t *)msgVCP, msgVCP_len);
+        }
+      }
+      if(strcmp(token,strCMD_2) == 0)
+      {
+        CDC_Transmit_FS(msgStr,sizeof(msgStr)-1);
 
-      msgVCP_len = sprintf(msgVCP, "cnt:%u ", cnt);
-      CDC_Transmit_FS((uint8_t *)msgVCP, msgVCP_len);
+        while(cnt != 0)
+        {
+          HAL_GPIO_TogglePin (GPIOB, GPIO_PIN_0);
+          HAL_GPIO_TogglePin (GPIOB, GPIO_PIN_7);
 
-      HAL_Delay(1);
+          msgVCP_len = sprintf(msgVCP, "cnt:%u ", cnt);
+          CDC_Transmit_FS((uint8_t *)msgVCP, msgVCP_len);
 
-      cnt --;
+          HAL_Delay(1);
+
+          cnt --;
+        }
+        HAL_Delay(500);
+        cnt=100;
+
+        // OPTIONAL: send 5000 characters
+        CDC_Transmit_FS((uint8_t *)msgVCP_2,sizeof(msgVCP_2));
+        HAL_Delay(100);
+
+        memset (bufferVCP_Rx, '\0', 64);  // clear the VCP buffer always
+      }
+
     }
-    HAL_Delay(500);
-    cnt=100;
 
-    // OPTIONAL: send 5000 characters
-    CDC_Transmit_FS((uint8_t *)msgVCP_2,sizeof(msgVCP_2));
-    HAL_Delay(100);
 
     /* USER CODE END WHILE */
 
